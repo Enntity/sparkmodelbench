@@ -36,6 +36,16 @@ def render(result):
             lines.append(f"| {name} | {number(r['tokens_s'])} | {number(r['last_s'])} | "
                          f"{median(r['output_tokens']):g} | {gates['passed']}/{gates['total']} |")
         lines.append("")
+    if "concurrency" in lanes:
+        plan = result["protocol"]["concurrency"]
+        lines.extend(["## RigMark · concurrency", "",
+                      f"{plan['workload'].capitalize()} prompts started together, {plan['output']} output tokens each, "
+                      f"median of {plan['rounds']} rounds. Aggregate throughput includes prefill and scheduling.", "",
+                      "| Requests | Aggregate tok/s | Per-stream tok/s | Per-stream TTFT (s) |", "|---:|---:|---:|---:|"])
+        for level, r in lanes["concurrency"].items():
+            lines.append(f"| {level} | {number(r['aggregate_tokens_s'])} | {number(r['stream_tokens_s'])} | "
+                         f"{number(r['stream_ttft_s'])} |")
+        lines.append("")
     if "c4" in lanes:
         lines.extend(["## SparkGLM · staggered C4", "", "| Round | Wall (s) | Stream TTFT (s) | Longest visible gap (s) | Full streams |",
                       "|---|---:|---|---:|---|"])
