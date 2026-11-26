@@ -59,6 +59,12 @@ def main():
     p.add_argument("--lanes", nargs="+", choices=["decode", "prefill", "c4", "quality"],
                    default=["decode", "prefill", "c4", "quality"])
     args = p.parse_args()
+    dirty = subprocess.check_output(["git", "-C", ROOT, "diff", "--name-only", "HEAD", "--",
+                                     "run.py", "protocol.json", "field_guide.py"])
+    if dirty:
+        p.error("commit changes to measured workload files before starting a run")
+    if len(args.lanes) != len(set(args.lanes)):
+        p.error("each lane can be requested once")
     pins = {}
     for path in (PERF, QUALITY):
         pin = subprocess.check_output(["git", "-C", ROOT, "rev-parse",
@@ -123,14 +129,21 @@ def main():
                     write(summary, result)
             elif lane == "c4":
                 rounds = result["lanes"][lane] = {}
+                transport_errors = []
                 for i in range(PLAN["c4"]["repetitions"] + 1):
                     record = capture(base, args.model, key, f"{trial}-{i}", PLAN["c4"], args.portable)
                     write(out / f"c4-{i}.json", record)
+                    for r in record["requests"]:
+                        if r.get("error") or not r["done"] or not r["usage"]:
+                            transport_errors.append(f"round {i} stream {r['stream']}: " +
+                                                    (r.get("error") or "missing DONE/usage"))
                     rounds["warmup" if i == 0 else str(i)] = {
                         "complete": record["complete"], "wall_s": record["wall_s"],
                         "streams": [{k: r[k] for k in ("ttft_s","max_visible_gap_s","usage")}
                                     for r in record["requests"]]}
                     write(summary, result)
+                if transport_errors:
+                    raise RuntimeError("; ".join(transport_errors))
             else:
                 cmd = [QUALITY / "rigmark", "quality", "run", "--model", args.model, "--endpoint",
                        base + "/v1", "--output", out / "quality", "--seconds", str(PLAN["task_seconds"]),

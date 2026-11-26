@@ -12,8 +12,8 @@ TOPICS = ("distributed systems engineering", "surprising facts about the solar s
 
 
 def capture(base, model, key, salt, settings, portable):
-    barrier = threading.Barrier(4, action=lambda: epoch.append(time.monotonic()))
     epoch = []
+    barrier = threading.Barrier(len(TOPICS), action=lambda: epoch.append(time.monotonic()))
 
     def request(index):
         facts = "\n".join(f"context-{index}-{i}: alpha beta gamma delta"
@@ -67,8 +67,9 @@ def capture(base, model, key, salt, settings, portable):
         times = [event["s"] for event in row["events"]]
         visible = [event["s"] for event in row["events"] if event["visible"]]
         row["ttft_s"] = times[0] - start if times else None
-        row["max_visible_gap_s"] = max((b-a for a,b in zip(visible, visible[1:])), default=None)
+        row["max_visible_gap_s"] = max((b - a for a, b in zip(visible, visible[1:])), default=None)
         row["complete"] = bool(row["done"] and visible and not row.get("error")
+                               and row["usage"].get("prompt_tokens", 0) > 0
                                and row.get("finish_reason") in ("stop", "length")
                                and row["usage"].get("completion_tokens") == settings["output"])
         return row
