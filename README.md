@@ -9,7 +9,7 @@
 | Source | Settings and measurements |
 |---|---|
 | RigMark, protocol 1.3.0 | Five code, prose and structured-output samples each. 8,192-token cap, temperature zero, low reasoning effort by default. Record decode tok/s, time to last output and completion gates. |
-| RigMark prefill | Its exact token-ID workload at 8K, 32K, 64K, 128K and 256K, three first/immediate-replay pairs per depth. Add 512K and near-1M with `--extended`. Include the eight-token output reserve when checking the context limit. |
+| RigMark prefill | Its exact token-ID workload at 8K, 32K, 64K, 128K and 256K, three first/immediate-replay pairs per depth. Include the eight-token output reserve when checking the context limit. |
 | RigMark Quality, v0.0.2 | Four unchanged tasks: `python-expiry`, `go-transfer-ledger`, `payment-recovery` and `evidence-revisions`. Each gets a 180-second agent budget and an 8,192-token cap per response. Report checks, conversation finish, seconds and output tokens across turns. Grading time is included in elapsed seconds. |
 | Enntity’s staggered C4 | Four distinct field-guide prompts of approximately 16K tokens arrive at 0, 1, 2 and 3 seconds, each with a 400-token output budget. Discard one warm-up and retain all three measured rounds, including each stream’s actual start, first token and visible stalls. |
 

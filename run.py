@@ -38,7 +38,6 @@ def main():
     p.add_argument("--comparison-id", default="sparkmodelbench-v1")
     p.add_argument("--trial", help="fresh shared text salt for a matched comparison")
     p.add_argument("--effort", choices=["low", "medium", "xhigh", "default"], default="low")
-    p.add_argument("--extended", action="store_true")
     p.add_argument("--portable", action="store_true", help="chat-only endpoint: skip exact prefill and use standard C4 chat fields")
     p.add_argument("--lanes", nargs="+", choices=["decode", "prefill", "c4", "quality"],
                    default=["decode", "prefill", "c4", "quality"])
@@ -91,9 +90,8 @@ def main():
                                                 "gate": row["completion_gate"]}
                                          for name, row in data.items()}
             elif lane == "prefill":
-                depths = PLAN["prefill_depths"] + (PLAN["extended_depths"] if args.extended else [])
                 curve = result["lanes"][lane] = {}
-                for depth in depths:
+                for depth in PLAN["prefill_depths"]:
                     if args.portable:
                         curve[depth] = {"skip": "chat-only mode; RigMark exact prefill requires token-ID completions"}
                         continue
