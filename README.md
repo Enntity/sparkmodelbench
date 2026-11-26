@@ -13,6 +13,8 @@
 | RigMark Quality, v0.0.2 | Four unchanged tasks: `python-expiry`, `go-transfer-ledger`, `payment-recovery` and `evidence-revisions`. Each gets a 180-second agent budget and an 8,192-token cap per response. Report checks, conversation finish, seconds and output tokens across turns. Grading time is included in elapsed seconds. |
 | Enntity’s staggered C4 | Four distinct field-guide prompts of approximately 16K tokens arrive at 0, 1, 2 and 3 seconds, each with a 400-token output budget. Discard one warm-up and retain all three measured rounds, including each stream’s actual start, first token and visible stalls. |
 
+**Optional: RigMark concurrency.** `--lanes ... concurrency` adds RigMark's own concurrency sweep: 1, 2, 4 and 8 code requests released together through a barrier, 256 output tokens each, three rounds per level, at the same effort as the other lanes. It reports aggregate throughput (prefill and scheduling included), per-stream decode and per-stream time to first token, and keeps RigMark's raw rounds in `concurrency.json`. It is RigMark's workload, not an Enntity addition, and it is not in the default suite. Name it on both contenders when you compare.
+
 The upstream checkouts and licenses are pinned in [upstream/rigmark](upstream/rigmark) and [upstream/rigmark-quality](upstream/rigmark-quality). Enntity’s parameter choices are in [protocol.json](protocol.json).
 
 ## Run

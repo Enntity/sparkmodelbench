@@ -39,8 +39,9 @@ def main():
     p.add_argument("--trial", help="fresh shared text salt for a matched comparison")
     p.add_argument("--effort", choices=["low", "medium", "xhigh", "default"], default="low")
     p.add_argument("--portable", action="store_true", help="chat-only endpoint: skip exact prefill and use standard C4 chat fields")
-    p.add_argument("--lanes", nargs="+", choices=["decode", "prefill", "c4", "quality"],
-                   default=["decode", "prefill", "c4", "quality"])
+    p.add_argument("--lanes", nargs="+", choices=["decode", "prefill", "c4", "quality", "concurrency"],
+                   default=["decode", "prefill", "c4", "quality"],
+                   help="concurrency (RigMark's 1/2/4/8-request sweep) runs only when named")
     args = p.parse_args()
     dirty = subprocess.check_output(["git", "-C", ROOT, "diff", "--name-only", "HEAD", "--",
                                      "run.py", "protocol.json", "field_guide.py"])
@@ -106,6 +107,19 @@ def main():
                                     for k,v in record.items()}
                     write(out / f"prefill-{depth}.json", record)
                     write(summary, result)
+            elif lane == "concurrency":
+                plan = PLAN["concurrency"]
+                extra = {} if args.effort == "default" else {"reasoning_effort": args.effort}
+                record = bench.run_concurrency(client, args.model, prompts, plan["levels"], plan["rounds"],
+                                               plan["output"], plan["seed"], extra, plan["workload"],
+                                               args.comparison_id)
+                write(out / "concurrency.json", record)
+                result["lanes"][lane] = {
+                    level: {"aggregate_tokens_s": r["aggregate_end_to_end_tokens_per_second"]["median"],
+                            "stream_tokens_s": r["per_stream_decode_tokens_per_second"]["median"],
+                            "stream_ttft_s": r["per_stream_ttft_seconds"]["median"],
+                            "output_tokens": [row["completion_tokens"] for row in r["rounds"]]}
+                    for level, r in record.items()}
             elif lane == "c4":
                 rounds = result["lanes"][lane] = {}
                 transport_errors = []
