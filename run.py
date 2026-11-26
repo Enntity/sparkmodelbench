@@ -50,7 +50,7 @@ def main():
     p.add_argument("--model", required=True)
     p.add_argument("--metadata", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--comparison-id", default="sparksplittime-v1")
+    p.add_argument("--comparison-id", default="sparkmodelbench-v1")
     p.add_argument("--trial", help="fresh shared text salt for a matched comparison")
     p.add_argument("--effort", choices=["low", "medium", "xhigh", "default"], default="low")
     p.add_argument("--extended", action="store_true")

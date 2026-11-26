@@ -1,9 +1,9 @@
-# SparkSplitTime
+# SparkModelBench
 
 Measure generation speed, prefill over a context sweep, four staggered requests, and elapsed time and tokens to a checked result. Runs against a single OpenAI-compatible endpoint. Python 3.10+, Git and Docker are required for the complete suite.
 
-    git clone --recurse-submodules https://github.com/Enntity/sparksplittime
-    cd sparksplittime
+    git clone --recurse-submodules https://github.com/enntity/sparkmodelbench
+    cd sparkmodelbench
     docker build -t rigmark-quality-runtime:0.4 upstream/rigmark-quality/quality_suite
     cp upstream/rigmark/metadata.example.json appliance.json
     # Fill in the appliance metadata before running.
