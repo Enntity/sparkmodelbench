@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import statistics
 import subprocess
 import sys
 
@@ -30,21 +29,6 @@ def revision(path):
     return subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"], text=True).strip()
 
 
-def fixed_text(client, model, depth, trial, pairs):
-    """A cross-tokenizer workload. Depth names refer to repeated text units."""
-    rows = []
-    for pair in range(pairs):
-        text = f"Trial {trial}/{depth}/{pair}\n" + " alpha" * depth + "\nReply OK."
-        payload = {"model": model, "messages": [{"role": "user", "content": text}],
-                   "temperature": 0, "max_tokens": 8, "stream": True,
-                   "stream_options": {"include_usage": True}}
-        for phase in ("first", "replay"):
-            row = client.stream("/v1/chat/completions", payload)
-            row.update(phase=phase, pair=pair, prompt_sha256=hashlib.sha256(text.encode()).hexdigest())
-            rows.append(row)
-    return {"fixed_text_units": depth, "runs": rows}
-
-
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--base-url", required=True)
@@ -55,7 +39,7 @@ def main():
     p.add_argument("--trial", help="fresh shared text salt for a matched comparison")
     p.add_argument("--effort", choices=["low", "medium", "xhigh", "default"], default="low")
     p.add_argument("--extended", action="store_true")
-    p.add_argument("--portable", action="store_true", help="fixed-text sweep and standard C4 chat body")
+    p.add_argument("--portable", action="store_true", help="chat-only endpoint: skip exact prefill and use standard C4 chat fields")
     p.add_argument("--lanes", nargs="+", choices=["decode", "prefill", "c4", "quality"],
                    default=["decode", "prefill", "c4", "quality"])
     args = p.parse_args()
@@ -110,21 +94,18 @@ def main():
                 depths = PLAN["prefill_depths"] + (PLAN["extended_depths"] if args.extended else [])
                 curve = result["lanes"][lane] = {}
                 for depth in depths:
+                    if args.portable:
+                        curve[depth] = {"skip": "chat-only mode; RigMark exact prefill requires token-ID completions"}
+                        continue
                     if depth + 8 > meta["context_limit"]:
                         curve[depth] = {"skip": "context limit including output reserve"}
                         continue
-                    if args.portable:
-                        record = fixed_text(client, args.model, depth, trial, PLAN["prefill_pairs"])
-                        curve[depth] = {"first_ttft_s": statistics.median(
-                            r["ttft_seconds"] for r in record["runs"] if r["phase"] == "first"),
-                            "prompt_tokens": record["runs"][0]["prompt_tokens"]}
-                    else:
-                        record = bench.run_prefill(client, args.model, prompts, [depth],
-                                                   PLAN["prefill_pairs"], args.comparison_id)[str(depth)]
-                        curve[depth] = {k: {"ttft_s": v["ttft_seconds"]["median"],
-                                            "tokens_s": v["effective_prefill_tokens_per_second"]["median"],
-                                            "cached_tokens": [r["cached_prompt_tokens"] for r in v["runs"]]}
-                                        for k,v in record.items()}
+                    record = bench.run_prefill(client, args.model, prompts, [depth],
+                                               PLAN["prefill_pairs"], args.comparison_id)[str(depth)]
+                    curve[depth] = {k: {"ttft_s": v["ttft_seconds"]["median"],
+                                        "tokens_s": v["effective_prefill_tokens_per_second"]["median"],
+                                        "cached_tokens": [r["cached_prompt_tokens"] for r in v["runs"]]}
+                                    for k,v in record.items()}
                     write(out / f"prefill-{depth}.json", record)
                     write(summary, result)
             elif lane == "c4":

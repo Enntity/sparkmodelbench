@@ -3,11 +3,9 @@ import json
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import Mock
 
 from card import render
 from field_guide import capture
-from run import fixed_text
 
 
 class ProtocolTest(unittest.TestCase):
@@ -43,13 +41,14 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(len({r["prompt_sha256"] for r in data["requests"]}), 4)
         self.assertTrue(all(r["start_s"] >= r["scheduled_s"] for r in data["requests"]))
 
-    def test_fixed_text_replays_identical_request_only_within_pair(self):
-        client = Mock()
-        client.stream.side_effect = lambda *_: {"prompt_tokens": 27}
-        runs = fixed_text(client, "test", 8, "shared", 2)["runs"]
-        hashes = [r["prompt_sha256"] for r in runs]
-        self.assertEqual(hashes[::2], hashes[1::2])
-        self.assertNotEqual(hashes[0], hashes[2])
+    def test_chat_only_card_labels_exact_prefill_as_skipped(self):
+        result = dict(model="test", appliance=dict(hardware="cpu", serving_engine="fixture"),
+                      suite="abc", comparison_id="one", portable=True, errors={},
+                      lanes={"prefill": {"8192": {"skip": "chat-only mode"}}})
+        card = render(result)
+        self.assertIn("Skipped on this chat-only endpoint", card)
+        self.assertNotIn("Outside the declared context limit", card)
+        self.assertIn("Alex Ellis, OpenFaaS Ltd", card)
 
     def test_missing_cache_evidence_stays_unverified(self):
         row = dict(ttft_s=1.2, tokens_s=123, cached_tokens=[None, None, None])

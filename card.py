@@ -16,16 +16,20 @@ def render(result):
     meta = result["appliance"]
     lines = [f"# {result['model']} · SparkModelBench", "",
              f"{meta['hardware']} · {meta['serving_engine']}", "",
+             "Serving measurements and quality tasks by **Alex Ellis, OpenFaaS Ltd**. "
+             "[RigMark](https://github.com/alexellis/rigmark) · "
+             "[RigMark Quality](https://github.com/alexellis/rigmark-quality). "
+             "Enntity adds the staggered four-request field guide.", "",
              f"Comparison `{result['comparison_id']}` · suite `{result['suite'][:12]}`", ""]
     if "quality" in lanes:
-        lines.extend(["## Task completion", "", "| Task | Checks passed | Finished | Seconds | Output tokens |",
+        lines.extend(["## RigMark Quality · task completion", "", "| Task | Checks passed | Finished | Seconds | Output tokens |",
                       "|---|---|---|---:|---:|"])
         for task, row in lanes["quality"].items():
             lines.append(f"| {task} | {row['passed']} | {row['finished']} | {number(row['wall_s'])} | "
                          f"{row['tokens'] if row['tokens'] is not None else '—'} |")
         lines.append("")
     if "decode" in lanes:
-        lines.extend(["## Generation, median", "", "| Workload | Tok/s | Last output (s) | Output tokens | Gates |",
+        lines.extend(["## RigMark · generation, median", "", "| Workload | Tok/s | Last output (s) | Output tokens | Gates |",
                       "|---|---:|---:|---:|---:|"])
         for name, r in lanes["decode"].items():
             gates = r["gate"]
@@ -33,7 +37,7 @@ def render(result):
                          f"{median(r['output_tokens']):g} | {gates['passed']}/{gates['total']} |")
         lines.append("")
     if "c4" in lanes:
-        lines.extend(["## Staggered C4", "", "| Round | Wall (s) | Stream TTFT (s) | Longest visible gap (s) | Full streams |",
+        lines.extend(["## SparkGLM · staggered C4", "", "| Round | Wall (s) | Stream TTFT (s) | Longest visible gap (s) | Full streams |",
                       "|---|---:|---|---:|---|"])
         valid = []
         for name, r in lanes["c4"].items():
@@ -46,9 +50,9 @@ def render(result):
             lines.extend(["", f"Median measured wall time **{number(median(valid))} s**."])
         lines.append("")
     if "prefill" in lanes:
-        lines.extend(["## Prefill", ""])
+        lines.extend(["## RigMark · prefill", ""])
         if result["portable"]:
-            lines.extend(["| Text units | Actual prompt tokens | First TTFT (s) |", "|---:|---:|---:|"])
+            lines.extend(["Skipped on this chat-only endpoint. Exact-depth prefill requires RigMark's token-ID completion path.", ""])
         else:
             lines.extend(["| Prompt tokens | First TTFT (s) | First tok/s | Replay TTFT (s) | Replay tok/s | First cache evidence |",
                           "|---:|---:|---:|---:|---:|---|"])
@@ -56,8 +60,6 @@ def render(result):
         for depth, r in lanes["prefill"].items():
             if "skip" in r:
                 skipped.append(str(depth))
-            elif result["portable"]:
-                lines.append(f"| {depth} | {r['prompt_tokens']} | {number(r['first_ttft_s'])} |")
             else:
                 first, replay = r["cold"], r["warm_replay"]
                 observed = first["cached_tokens"]
@@ -65,7 +67,7 @@ def render(result):
                 lines.append(f"| {depth} | {number(first['ttft_s'])} | {number(first['tokens_s'])} | "
                              f"{number(replay['ttft_s'])} | {number(replay['tokens_s'])} | "
                              f"{'zero cached tokens reported' if verified else 'unverified'} |")
-        if skipped:
+        if skipped and not result["portable"]:
             lines.extend(["", "Outside the declared context limit including output reserve: " + ", ".join(skipped) + "."])
         lines.append("")
     for lane, error in result["errors"].items():

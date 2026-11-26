@@ -1,0 +1,11 @@
+SparkModelBench
+
+RigMark and RigMark Quality are by Alex Ellis, OpenFaaS Ltd.
+Copyright (c) 2026 Alex Ellis, OpenFaaS Ltd. Both projects use the MIT License.
+Their licenses accompany their respective pinned Git submodules:
+  upstream/rigmark/LICENSE
+  upstream/rigmark-quality/LICENSE
+
+The Enntity wrapper selects upstream parameters and tasks and formats the
+combined report. Its additional workload, staggered C4, derives from Enntity
+SparkGLM's bench/four_stream_video.py at b83e250. Enntity code is AGPL-3.0-only.
