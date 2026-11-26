@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "decode_runs": 5,
+  "decode_cap": 8192,
+  "prefill_depths": [8192, 32768, 65536, 131072, 262144],
+  "extended_depths": [524288, 1048568],
+  "prefill_pairs": 3,
+  "c4": {"depth": 16384, "output": 400, "interval_s": 1, "repetitions": 3},
+  "quality_tasks": ["python-expiry", "go-transfer-ledger", "payment-recovery", "evidence-revisions"],
+  "task_seconds": 180,
+  "task_output_cap": 8192
+}

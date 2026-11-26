@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Run the versioned suite against a serving endpoint."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import secrets
+import statistics
+import subprocess
+import sys
+
+from field_guide import capture
+
+ROOT = Path(__file__).resolve().parent
+PERF = ROOT / "upstream/rigmark"
+QUALITY = ROOT / "upstream/rigmark-quality"
+PLAN = json.loads((ROOT / "protocol.json").read_text())
+
+
+def write(path, value):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(value, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def revision(path):
+    return subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"], text=True).strip()
+
+
+def fixed_text(client, model, depth, trial, pairs):
+    """A cross-tokenizer workload. Depth names refer to repeated text units."""
+    rows = []
+    for pair in range(pairs):
+        text = f"Trial {trial}/{depth}/{pair}\n" + " alpha" * depth + "\nReply OK."
+        payload = {"model": model, "messages": [{"role": "user", "content": text}],
+                   "temperature": 0, "max_tokens": 8, "stream": True,
+                   "stream_options": {"include_usage": True}}
+        for phase in ("first", "replay"):
+            row = client.stream("/v1/chat/completions", payload)
+            row.update(phase=phase, pair=pair, prompt_sha256=hashlib.sha256(text.encode()).hexdigest())
+            rows.append(row)
+    return {"fixed_text_units": depth, "runs": rows}
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--base-url", required=True)
+    p.add_argument("--model", required=True)
+    p.add_argument("--metadata", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--comparison-id", default="sparksplittime-v1")
+    p.add_argument("--trial", help="fresh shared text salt for a matched comparison")
+    p.add_argument("--effort", choices=["low", "medium", "xhigh", "default"], default="low")
+    p.add_argument("--extended", action="store_true")
+    p.add_argument("--portable", action="store_true", help="fixed-text sweep and standard C4 chat body")
+    p.add_argument("--lanes", nargs="+", choices=["decode", "prefill", "c4", "quality"],
+                   default=["decode", "prefill", "c4", "quality"])
+    args = p.parse_args()
+    pins = {}
+    for path in (PERF, QUALITY):
+        pin = subprocess.check_output(["git", "-C", ROOT, "rev-parse",
+                                       "HEAD:" + str(path.relative_to(ROOT))], text=True).strip()
+        if revision(path) != pin or subprocess.check_output(["git", "-C", path, "status", "--porcelain"]):
+            p.error(f"restore the pinned clean submodule at {path}")
+        pins[path.name] = pin
+    sys.path.insert(0, str(PERF))
+    import bench
+    meta = bench.load_metadata(args.metadata)
+    base = bench.validate_base_url(args.base_url)
+    key = os.getenv("OPENAI_API_KEY", "")
+    client = bench.Client(base, key, 1800)
+    prompts, _ = bench.load_prompts(PERF / "prompts.json")
+    out = args.out.resolve()
+    out.mkdir(parents=True, exist_ok=False)
+    trial = args.trial or secrets.token_hex(12)
+    result = {"suite": revision(ROOT), "protocol": PLAN, "upstreams": pins,
+              "model": args.model, "appliance": meta, "trial": trial,
+              "comparison_id": args.comparison_id, "effort": args.effort, "portable": args.portable,
+              "requested": args.lanes, "lanes": {}, "errors": {}}
+    summary = out / "result.json"
+    write(summary, result)
+    for lane in args.lanes:
+        print(f"Starting {lane}", flush=True)
+        try:
+            if lane == "decode":
+                cmd = [PERF / "rigmark", "bench", "--model", args.model, "--base-url", base,
+                       "--metadata", args.metadata.resolve(), "--label", "decode",
+                       "--comparison-id", args.comparison_id, "--runs", str(PLAN["decode_runs"]),
+                       "--decode-tokens", str(PLAN["decode_cap"]), "--skip-concurrency",
+                       "--skip-prefill", "--output", out / "rigmark.json"]
+                if args.effort != "default":
+                    cmd.extend(["--extra-body", json.dumps({"reasoning_effort": args.effort})])
+                subprocess.run(cmd, check=True)
+                data = json.loads((out / "rigmark.json").read_text())["decode"]
+                result["lanes"][lane] = {name: {"tokens_s": row["decode_tokens_per_second"]["median"],
+                                                "last_s": row["time_to_last_output_seconds"]["median"],
+                                                "output_tokens": [r["completion_tokens"] for r in row["runs"]],
+                                                "gate": row["completion_gate"]}
+                                         for name, row in data.items()}
+            elif lane == "prefill":
+                depths = PLAN["prefill_depths"] + (PLAN["extended_depths"] if args.extended else [])
+                curve = result["lanes"][lane] = {}
+                for depth in depths:
+                    if depth + 8 > meta["context_limit"]:
+                        curve[depth] = {"skip": "context limit including output reserve"}
+                        continue
+                    if args.portable:
+                        record = fixed_text(client, args.model, depth, trial, PLAN["prefill_pairs"])
+                        curve[depth] = {"first_ttft_s": statistics.median(
+                            r["ttft_seconds"] for r in record["runs"] if r["phase"] == "first"),
+                            "prompt_tokens": record["runs"][0]["prompt_tokens"]}
+                    else:
+                        record = bench.run_prefill(client, args.model, prompts, [depth],
+                                                   PLAN["prefill_pairs"], args.comparison_id)[str(depth)]
+                        curve[depth] = {k: {"ttft_s": v["ttft_seconds"]["median"],
+                                            "tokens_s": v["effective_prefill_tokens_per_second"]["median"],
+                                            "cached_tokens": [r["cached_prompt_tokens"] for r in v["runs"]]}
+                                        for k,v in record.items()}
+                    write(out / f"prefill-{depth}.json", record)
+                    write(summary, result)
+            elif lane == "c4":
+                rounds = result["lanes"][lane] = {}
+                for i in range(PLAN["c4"]["repetitions"] + 1):
+                    record = capture(base, args.model, key, f"{trial}-{i}", PLAN["c4"], args.portable)
+                    write(out / f"c4-{i}.json", record)
+                    rounds["warmup" if i == 0 else str(i)] = {
+                        "complete": record["complete"], "wall_s": record["wall_s"],
+                        "streams": [{k: r[k] for k in ("ttft_s","max_visible_gap_s","usage")}
+                                    for r in record["requests"]]}
+                    write(summary, result)
+            else:
+                cmd = [QUALITY / "rigmark", "quality", "run", "--model", args.model, "--endpoint",
+                       base + "/v1", "--output", out / "quality", "--seconds", str(PLAN["task_seconds"]),
+                       "--max-output-tokens", str(PLAN["task_output_cap"])]
+                for task in PLAN["quality_tasks"]:
+                    cmd.extend(["--task", task])
+                if args.effort != "default":
+                    cmd.extend(["--reasoning-effort", args.effort])
+                if key:
+                    cmd.extend(["--api-key-env", "OPENAI_API_KEY"])
+                subprocess.run(cmd, check=True)
+                tasks = result["lanes"][lane] = {}
+                for task in PLAN["quality_tasks"]:
+                    r = json.loads((out / "quality" / f"{args.model.replace('/', '-')}-{task}.json").read_text())
+                    usage = [e.get("usage") or {} for e in r["events"]]
+                    tasks[task] = {"passed": r["artefact_passed"], "finished": r["conversation_finished"],
+                                   "wall_s": r["elapsed_seconds"], "failure": r["failure"],
+                                   "tokens": sum(u["completion_tokens"] for u in usage)
+                                   if usage and all(isinstance(u.get("completion_tokens"), int) for u in usage)
+                                   else None}
+        except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as exc:
+            result["errors"][lane] = str(exc)
+            print(f"{lane} failed: {exc}", file=sys.stderr, flush=True)
+        write(summary, result)
+    files = sorted(f for f in out.rglob("*") if f.is_file())
+    (out / "SHA256SUMS").write_text("".join(
+        f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.relative_to(out)}\n" for f in files))
+    print(summary)
+    return int(bool(result["errors"]))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

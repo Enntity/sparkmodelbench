@@ -1,0 +1,6 @@
+[submodule "upstream/rigmark"]
+	path = upstream/rigmark
+	url = https://github.com/alexellis/rigmark.git
+[submodule "upstream/rigmark-quality"]
+	path = upstream/rigmark-quality
+	url = https://github.com/alexellis/rigmark-quality.git
