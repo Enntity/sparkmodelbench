@@ -11,6 +11,7 @@ import statistics
 import subprocess
 import sys
 
+from card import render
 from field_guide import capture
 
 ROOT = Path(__file__).resolve().parent
@@ -154,6 +155,7 @@ def main():
             result["errors"][lane] = str(exc)
             print(f"{lane} failed: {exc}", file=sys.stderr, flush=True)
         write(summary, result)
+    (out / "CARD.md").write_text(render(result))
     files = sorted(f for f in out.rglob("*") if f.is_file())
     (out / "SHA256SUMS").write_text("".join(
         f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.relative_to(out)}\n" for f in files))
