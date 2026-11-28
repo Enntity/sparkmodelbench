@@ -6,7 +6,7 @@
   "prefill_pairs": 3,
   "c4": {"depth": 16384, "output": 400, "interval_s": 1, "repetitions": 3},
   "quality_tasks": ["python-expiry", "go-transfer-ledger", "payment-recovery", "evidence-revisions"],
-  "task_seconds": 180,
+  "task_seconds": 300,
   "task_output_cap": 8192,
   "concurrency": {"levels": [1, 2, 4, 8], "rounds": 3, "output": 256, "workload": "code", "seed": 20260905}
 }
